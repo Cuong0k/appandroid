@@ -8,7 +8,7 @@ on:
 jobs:
   release:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 60
     permissions:
       contents: write
 
@@ -22,13 +22,13 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Download Gradle Wrapper JAR
-        run: |
-          mkdir -p gradle/wrapper
-          curl -fsSL \
-            "https://github.com/gradle/gradle/raw/v8.5.0/gradle/wrapper/gradle-wrapper.jar" \
-            -o gradle/wrapper/gradle-wrapper.jar
-          chmod +x gradlew
+      - name: Setup Gradle (generates missing gradle-wrapper.jar)
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: "8.5"
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
 
       - name: Download libv2ray.aar
         run: |
@@ -43,7 +43,9 @@ for a in data.get('assets', []):
     if 'libv2ray' in a['name'] and a['name'].endswith('.aar'):
         print(a['browser_download_url']); break
 ")
-          curl -fsSL -L "$DOWNLOAD_URL" -o app/libs/libv2ray.aar
+          if [ -n "$DOWNLOAD_URL" ]; then
+            curl -fsSL -L "$DOWNLOAD_URL" -o app/libs/libv2ray.aar
+          fi
 
       - name: Get version from tag
         id: version
@@ -56,12 +58,13 @@ for a in data.get('assets', []):
           CODE=$(( MAJOR * 10000 + MINOR * 100 + ${PATCH:-0} ))
           echo "VERSION_CODE=$CODE" >> $GITHUB_OUTPUT
 
-      - name: Update version
+      - name: Update version in build.gradle.kts
         run: |
           sed -i "s/versionCode = [0-9]*/versionCode = ${{ steps.version.outputs.VERSION_CODE }}/" app/build.gradle.kts
           sed -i 's/versionName = "[^"]*"/versionName = "${{ steps.version.outputs.VERSION_NAME }}"/' app/build.gradle.kts
 
       - name: Decode Keystore
+        if: ${{ secrets.KEYSTORE_BASE64 != '' }}
         run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > app/release.jks
 
       - name: Build Release APK

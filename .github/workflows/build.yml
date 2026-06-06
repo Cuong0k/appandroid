@@ -14,7 +14,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 60
 
     steps:
       - name: Checkout
@@ -26,24 +26,14 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Download Gradle Wrapper JAR
-        run: |
-          mkdir -p gradle/wrapper
-          curl -fsSL \
-            "https://github.com/gradle/gradle/raw/v8.5.0/gradle/wrapper/gradle-wrapper.jar" \
-            -o gradle/wrapper/gradle-wrapper.jar
-          chmod +x gradlew
-          ls -lh gradle/wrapper/
-
-      - name: Cache Gradle
-        uses: actions/cache@v4
+      - name: Setup Gradle (generates missing gradle-wrapper.jar)
+        uses: gradle/actions/setup-gradle@v3
         with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle.kts') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
+          gradle-version: "8.5"
+          cache-read-only: false
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
 
       - name: Download libv2ray.aar
         run: |
@@ -53,31 +43,28 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/2dust/v2rayNG/releases/latest")
 
-          DOWNLOAD_URL=$(echo "$RELEASE_JSON" | python3 - <<'PYEOF'
+          DOWNLOAD_URL=$(echo "$RELEASE_JSON" | python3 -c "
 import sys, json
 data = json.loads(sys.stdin.read())
 for a in data.get('assets', []):
     if 'libv2ray' in a['name'] and a['name'].endswith('.aar'):
-        print(a['browser_download_url'])
-        break
-PYEOF
-)
+        print(a['browser_download_url']); break
+")
 
           if [ -z "$DOWNLOAD_URL" ]; then
-            echo "ERROR: Could not find libv2ray.aar in V2RayNG releases"
-            echo "Assets available:"
+            echo "Warning: libv2ray.aar not found in release assets"
+            echo "Available assets:"
             echo "$RELEASE_JSON" | python3 -c "
 import sys, json
 data = json.loads(sys.stdin.read())
 for a in data.get('assets', []):
     print(' -', a['name'])
 "
-            exit 1
+          else
+            echo "Downloading: $DOWNLOAD_URL"
+            curl -fsSL -L "$DOWNLOAD_URL" -o app/libs/libv2ray.aar
+            echo "Size: $(du -sh app/libs/libv2ray.aar)"
           fi
-
-          echo "Downloading: $DOWNLOAD_URL"
-          curl -fsSL -L "$DOWNLOAD_URL" -o app/libs/libv2ray.aar
-          echo "Done: $(du -sh app/libs/libv2ray.aar)"
 
       - name: Build Debug APK
         run: ./gradlew assembleDebug --stacktrace
@@ -91,25 +78,15 @@ for a in data.get('assets', []):
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 14
 
-      - name: Build Release APK
-        if: ${{ env.HAS_KEYSTORE == 'true' }}
-        run: ./gradlew assembleRelease --stacktrace
-        env:
-          GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx2g"
-          HAS_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' && 'true' || 'false' }}
-          SIGNING_KEYSTORE_PATH: ${{ github.workspace }}/app/release.jks
-          SIGNING_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          SIGNING_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          SIGNING_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-
-      - name: APK Summary
+      - name: Build Summary
         if: always()
         run: |
           echo "### Build Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          find app/build/outputs/apk -name "*.apk" 2>/dev/null | while read f; do
-            SIZE=$(du -sh "$f" | cut -f1)
-            NAME=$(basename "$f")
-            echo "- **$NAME** ($SIZE)" >> $GITHUB_STEP_SUMMARY
-            echo "  APK: $f ($SIZE)"
-          done || echo "No APK built"
+          if find app/build/outputs/apk -name "*.apk" 2>/dev/null | grep -q .; then
+            find app/build/outputs/apk -name "*.apk" | while read f; do
+              echo "- **$(basename $f)** ($(du -sh "$f" | cut -f1))" >> $GITHUB_STEP_SUMMARY
+            done
+          else
+            echo "No APK produced" >> $GITHUB_STEP_SUMMARY
+          fi
