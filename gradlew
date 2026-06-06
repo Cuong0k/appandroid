@@ -115,4 +115,5 @@ set -- \
         org.gradle.wrapper.GradleWrapperMain \
         "$@"
 
-exec "$JAVACMD" "$DEFAULT_JVM_OPTS" $JAVA_OPTS $GRADLE_OPTS "$@"
+# shellcheck disable=SC2086
+eval exec '"$JAVACMD"' $DEFAULT_JVM_OPTS $JAVA_OPTS $GRADLE_OPTS '"$@"'
