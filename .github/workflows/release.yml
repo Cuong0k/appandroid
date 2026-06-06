@@ -29,11 +29,14 @@ jobs:
             "https://services.gradle.org/distributions/gradle-${GRADLE_VER}-bin.zip" \
             -o /tmp/gradle.zip
           unzip -q /tmp/gradle.zip -d /tmp/gradle_dist/
+          mkdir -p /tmp/tmpproject
+          echo 'rootProject.name = "tmp"' > /tmp/tmpproject/settings.gradle
           /tmp/gradle_dist/gradle-${GRADLE_VER}/bin/gradle \
             wrapper \
             --gradle-version "${GRADLE_VER}" \
             --distribution-type bin \
-            --project-dir "$(pwd)"
+            --project-dir /tmp/tmpproject
+          cp /tmp/tmpproject/gradle/wrapper/gradle-wrapper.jar gradle/wrapper/gradle-wrapper.jar
           chmod +x gradlew
 
       - name: Download libv2ray.aar

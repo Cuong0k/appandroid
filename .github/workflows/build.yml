@@ -31,12 +31,18 @@ jobs:
             -o /tmp/gradle.zip
           echo "==> Extracting..."
           unzip -q /tmp/gradle.zip -d /tmp/gradle_dist/
-          echo "==> Generating wrapper JAR..."
+
+          echo "==> Generating wrapper using minimal temp project..."
+          mkdir -p /tmp/tmpproject
+          echo 'rootProject.name = "tmp"' > /tmp/tmpproject/settings.gradle
           /tmp/gradle_dist/gradle-${GRADLE_VER}/bin/gradle \
             wrapper \
             --gradle-version "${GRADLE_VER}" \
             --distribution-type bin \
-            --project-dir "$(pwd)"
+            --project-dir /tmp/tmpproject
+
+          echo "==> Copying wrapper JAR to project..."
+          cp /tmp/tmpproject/gradle/wrapper/gradle-wrapper.jar gradle/wrapper/gradle-wrapper.jar
           chmod +x gradlew
           echo "==> Wrapper ready:"
           ls -lh gradle/wrapper/
