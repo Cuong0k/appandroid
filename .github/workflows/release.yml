@@ -39,16 +39,11 @@ jobs:
       - name: Download libv2ray.aar
         run: |
           mkdir -p app/libs
-          RELEASE_JSON=$(curl -fsSL \
+          DOWNLOAD_URL=$(curl -fsSL \
             -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/2dust/v2rayNG/releases/latest")
-          DOWNLOAD_URL=$(echo "$RELEASE_JSON" | python3 -c "
-import sys, json
-data = json.loads(sys.stdin.read())
-for a in data.get('assets', []):
-    if 'libv2ray' in a['name'] and a['name'].endswith('.aar'):
-        print(a['browser_download_url']); break
-")
+            "https://api.github.com/repos/2dust/v2rayNG/releases/latest" \
+            | jq -r '.assets[] | select((.name | contains("libv2ray")) and (.name | endswith(".aar"))) | .browser_download_url' \
+            | head -1)
           if [ -n "$DOWNLOAD_URL" ]; then
             curl -fsSL -L "$DOWNLOAD_URL" -o app/libs/libv2ray.aar
           fi
