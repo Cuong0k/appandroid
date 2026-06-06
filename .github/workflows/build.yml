@@ -2,91 +2,88 @@ name: Build Android APK
 
 on:
   push:
-    branches: [ main, master ]
+    branches:
+      - main
+      - master
   pull_request:
-    branches: [ main, master ]
+    branches:
+      - main
+      - master
   workflow_dispatch:
-    inputs:
-      build_type:
-        description: 'Build type (debug / release)'
-        required: false
-        default: 'debug'
-        type: choice
-        options: [ debug, release ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
 
     steps:
-      # ── 1. Checkout code ─────────────────────────────────────────────
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ── 2. JDK 17 ────────────────────────────────────────────────────
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: gradle
 
-      # ── 3. Gradle wrapper JAR ─────────────────────────────────────────
       - name: Download Gradle Wrapper JAR
         run: |
           mkdir -p gradle/wrapper
           curl -fsSL \
-            "https://raw.githubusercontent.com/gradle/gradle/v8.5.0/gradle/wrapper/gradle-wrapper.jar" \
+            "https://github.com/gradle/gradle/raw/v8.5.0/gradle/wrapper/gradle-wrapper.jar" \
             -o gradle/wrapper/gradle-wrapper.jar
           chmod +x gradlew
+          ls -lh gradle/wrapper/
 
-      # ── 4. libv2ray.aar (VPN engine) ──────────────────────────────────
-      - name: Download libv2ray.aar
-        run: |
-          mkdir -p app/libs
-          echo "Fetching latest V2RayNG release..."
-          RELEASE_JSON=$(curl -fsSL \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/2dust/v2rayNG/releases/latest")
-
-          DOWNLOAD_URL=$(echo "$RELEASE_JSON" | python3 -c "
-          import sys, json
-          data = json.load(sys.stdin)
-          assets = data.get('assets', [])
-          for a in assets:
-              if 'libv2ray' in a['name'] and a['name'].endswith('.aar'):
-                  print(a['browser_download_url'])
-                  break
-          " 2>/dev/null)
-
-          if [ -z "$DOWNLOAD_URL" ]; then
-            echo "ERROR: libv2ray.aar not found in V2RayNG releases"
-            exit 1
-          fi
-
-          echo "Downloading: $DOWNLOAD_URL"
-          curl -fsSL "$DOWNLOAD_URL" -o app/libs/libv2ray.aar
-          echo "libv2ray.aar downloaded: $(du -sh app/libs/libv2ray.aar | cut -f1)"
-
-      # ── 5. Gradle cache ───────────────────────────────────────────────
-      - name: Cache Gradle packages
+      - name: Cache Gradle
         uses: actions/cache@v4
         with:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle.kts', '**/gradle-wrapper.properties') }}
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle.kts') }}
           restore-keys: |
-            gradle-${{ runner.os }}-
+            ${{ runner.os }}-gradle-
 
-      # ── 6. Build DEBUG APK ────────────────────────────────────────────
+      - name: Download libv2ray.aar
+        run: |
+          mkdir -p app/libs
+          echo "Fetching V2RayNG latest release..."
+          RELEASE_JSON=$(curl -fsSL \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/2dust/v2rayNG/releases/latest")
+
+          DOWNLOAD_URL=$(echo "$RELEASE_JSON" | python3 - <<'PYEOF'
+import sys, json
+data = json.loads(sys.stdin.read())
+for a in data.get('assets', []):
+    if 'libv2ray' in a['name'] and a['name'].endswith('.aar'):
+        print(a['browser_download_url'])
+        break
+PYEOF
+)
+
+          if [ -z "$DOWNLOAD_URL" ]; then
+            echo "ERROR: Could not find libv2ray.aar in V2RayNG releases"
+            echo "Assets available:"
+            echo "$RELEASE_JSON" | python3 -c "
+import sys, json
+data = json.loads(sys.stdin.read())
+for a in data.get('assets', []):
+    print(' -', a['name'])
+"
+            exit 1
+          fi
+
+          echo "Downloading: $DOWNLOAD_URL"
+          curl -fsSL -L "$DOWNLOAD_URL" -o app/libs/libv2ray.aar
+          echo "Done: $(du -sh app/libs/libv2ray.aar)"
+
       - name: Build Debug APK
         run: ./gradlew assembleDebug --stacktrace
         env:
-          GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx2g"
+          GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx2g -Xms512m"
 
-      # ── 7. Upload debug APK ───────────────────────────────────────────
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
@@ -94,36 +91,25 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 14
 
-      # ── 8. Build RELEASE APK (nếu có keystore) ────────────────────────
-      - name: Decode Keystore
-        if: ${{ secrets.KEYSTORE_BASE64 != '' }}
-        run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > app/release.jks
-
       - name: Build Release APK
-        if: ${{ secrets.KEYSTORE_BASE64 != '' }}
+        if: ${{ env.HAS_KEYSTORE == 'true' }}
         run: ./gradlew assembleRelease --stacktrace
         env:
           GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx2g"
+          HAS_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' && 'true' || 'false' }}
           SIGNING_KEYSTORE_PATH: ${{ github.workspace }}/app/release.jks
           SIGNING_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           SIGNING_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           SIGNING_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
 
-      - name: Upload Release APK
-        if: ${{ secrets.KEYSTORE_BASE64 != '' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: VpnApp-release-${{ github.run_number }}
-          path: app/build/outputs/apk/release/*.apk
-          retention-days: 90
-
-      # ── 9. In thông tin APK ───────────────────────────────────────────
-      - name: APK Info
+      - name: APK Summary
         if: always()
         run: |
-          echo "=== Build Output ==="
+          echo "### Build Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
           find app/build/outputs/apk -name "*.apk" 2>/dev/null | while read f; do
             SIZE=$(du -sh "$f" | cut -f1)
-            echo "  $f ($SIZE)"
-          done || echo "No APK found"
+            NAME=$(basename "$f")
+            echo "- **$NAME** ($SIZE)" >> $GITHUB_STEP_SUMMARY
+            echo "  APK: $f ($SIZE)"
+          done || echo "No APK built"

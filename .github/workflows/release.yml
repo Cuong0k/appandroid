@@ -3,14 +3,14 @@ name: Release APK
 on:
   push:
     tags:
-      - 'v*.*.*'   # trigger khi push tag: git tag v1.0.0 && git push origin v1.0.0
+      - 'v*.*.*'
 
 jobs:
   release:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     permissions:
-      contents: write  # để tạo GitHub Release
+      contents: write
 
     steps:
       - name: Checkout
@@ -21,13 +21,12 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: gradle
 
       - name: Download Gradle Wrapper JAR
         run: |
           mkdir -p gradle/wrapper
           curl -fsSL \
-            "https://raw.githubusercontent.com/gradle/gradle/v8.5.0/gradle/wrapper/gradle-wrapper.jar" \
+            "https://github.com/gradle/gradle/raw/v8.5.0/gradle/wrapper/gradle-wrapper.jar" \
             -o gradle/wrapper/gradle-wrapper.jar
           chmod +x gradlew
 
@@ -38,29 +37,29 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/2dust/v2rayNG/releases/latest")
           DOWNLOAD_URL=$(echo "$RELEASE_JSON" | python3 -c "
-          import sys, json
-          data = json.load(sys.stdin)
-          for a in data.get('assets', []):
-              if 'libv2ray' in a['name'] and a['name'].endswith('.aar'):
-                  print(a['browser_download_url']); break
-          ")
-          curl -fsSL "$DOWNLOAD_URL" -o app/libs/libv2ray.aar
+import sys, json
+data = json.loads(sys.stdin.read())
+for a in data.get('assets', []):
+    if 'libv2ray' in a['name'] and a['name'].endswith('.aar'):
+        print(a['browser_download_url']); break
+")
+          curl -fsSL -L "$DOWNLOAD_URL" -o app/libs/libv2ray.aar
 
       - name: Get version from tag
         id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-
-      - name: Update version in build.gradle.kts
         run: |
-          VERSION="${{ steps.version.outputs.VERSION }}"
-          # Remove 'v' prefix
+          VERSION="${GITHUB_REF#refs/tags/}"
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
           VERSION_NAME="${VERSION#v}"
-          # Convert semantic version to version code (e.g., 1.2.3 -> 10203)
+          echo "VERSION_NAME=$VERSION_NAME" >> $GITHUB_OUTPUT
           IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION_NAME"
-          VERSION_CODE=$(( MAJOR * 10000 + MINOR * 100 + PATCH ))
-          echo "VERSION_NAME=$VERSION_NAME, VERSION_CODE=$VERSION_CODE"
-          sed -i "s/versionCode = [0-9]*/versionCode = $VERSION_CODE/" app/build.gradle.kts
-          sed -i "s/versionName = \"[^\"]*\"/versionName = \"$VERSION_NAME\"/" app/build.gradle.kts
+          CODE=$(( MAJOR * 10000 + MINOR * 100 + ${PATCH:-0} ))
+          echo "VERSION_CODE=$CODE" >> $GITHUB_OUTPUT
+
+      - name: Update version
+        run: |
+          sed -i "s/versionCode = [0-9]*/versionCode = ${{ steps.version.outputs.VERSION_CODE }}/" app/build.gradle.kts
+          sed -i 's/versionName = "[^"]*"/versionName = "${{ steps.version.outputs.VERSION_NAME }}"/' app/build.gradle.kts
 
       - name: Decode Keystore
         run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > app/release.jks
@@ -76,23 +75,15 @@ jobs:
 
       - name: Rename APK
         run: |
-          VERSION="${{ steps.version.outputs.VERSION }}"
           cp app/build/outputs/apk/release/app-release.apk \
-             "VpnApp-${VERSION}.apk"
+             "VpnApp-${{ steps.version.outputs.VERSION }}.apk"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.version.outputs.VERSION }}
           name: "VPN App ${{ steps.version.outputs.VERSION }}"
           body: |
             ## VPN App ${{ steps.version.outputs.VERSION }}
-
-            ### Tính năng
-            - Kết nối VPN với gói đăng ký V2Board
-            - Hỗ trợ: VMess, VLESS, Trojan, Shadowsocks, Hysteria2
-            - Danh sách node cập nhật từ subscription
-            - Quản lý tài khoản và gói đăng ký
 
             ### Cài đặt
             1. Tải file APK bên dưới
@@ -101,7 +92,4 @@ jobs:
 
             ### Yêu cầu
             - Android 5.0+ (API 21)
-          files: |
-            VpnApp-${{ steps.version.outputs.VERSION }}.apk
-          draft: false
-          prerelease: false
+          files: VpnApp-${{ steps.version.outputs.VERSION }}.apk
