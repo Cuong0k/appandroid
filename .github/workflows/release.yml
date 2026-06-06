@@ -22,13 +22,19 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Gradle (generates missing gradle-wrapper.jar)
-        uses: gradle/actions/setup-gradle@v3
-        with:
-          gradle-version: "8.5"
-
-      - name: Make gradlew executable
-        run: chmod +x gradlew
+      - name: Generate Gradle Wrapper JAR
+        run: |
+          GRADLE_VER="8.5"
+          curl -fsSL \
+            "https://services.gradle.org/distributions/gradle-${GRADLE_VER}-bin.zip" \
+            -o /tmp/gradle.zip
+          unzip -q /tmp/gradle.zip -d /tmp/gradle_dist/
+          /tmp/gradle_dist/gradle-${GRADLE_VER}/bin/gradle \
+            wrapper \
+            --gradle-version "${GRADLE_VER}" \
+            --distribution-type bin \
+            --project-dir "$(pwd)"
+          chmod +x gradlew
 
       - name: Download libv2ray.aar
         run: |
@@ -64,8 +70,15 @@ for a in data.get('assets', []):
           sed -i 's/versionName = "[^"]*"/versionName = "${{ steps.version.outputs.VERSION_NAME }}"/' app/build.gradle.kts
 
       - name: Decode Keystore
-        if: ${{ secrets.KEYSTORE_BASE64 != '' }}
-        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > app/release.jks
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 --decode > app/release.jks
+            echo "Keystore decoded successfully"
+          else
+            echo "No keystore secret found, release APK will be unsigned"
+          fi
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_BASE64 }}
 
       - name: Build Release APK
         run: ./gradlew assembleRelease --stacktrace
@@ -78,7 +91,7 @@ for a in data.get('assets', []):
 
       - name: Rename APK
         run: |
-          cp app/build/outputs/apk/release/app-release.apk \
+          cp app/build/outputs/apk/release/app-release*.apk \
              "VpnApp-${{ steps.version.outputs.VERSION }}.apk"
 
       - name: Create GitHub Release

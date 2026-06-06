@@ -2,13 +2,9 @@ name: Build Android APK
 
 on:
   push:
-    branches:
-      - main
-      - master
+    branches: [main, master]
   pull_request:
-    branches:
-      - main
-      - master
+    branches: [main, master]
   workflow_dispatch:
 
 jobs:
@@ -26,23 +22,31 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Gradle (generates missing gradle-wrapper.jar)
-        uses: gradle/actions/setup-gradle@v3
-        with:
-          gradle-version: "8.5"
-          cache-read-only: false
-
-      - name: Make gradlew executable
-        run: chmod +x gradlew
+      - name: Generate Gradle Wrapper JAR
+        run: |
+          GRADLE_VER="8.5"
+          echo "==> Downloading Gradle ${GRADLE_VER}..."
+          curl -fsSL \
+            "https://services.gradle.org/distributions/gradle-${GRADLE_VER}-bin.zip" \
+            -o /tmp/gradle.zip
+          echo "==> Extracting..."
+          unzip -q /tmp/gradle.zip -d /tmp/gradle_dist/
+          echo "==> Generating wrapper JAR..."
+          /tmp/gradle_dist/gradle-${GRADLE_VER}/bin/gradle \
+            wrapper \
+            --gradle-version "${GRADLE_VER}" \
+            --distribution-type bin \
+            --project-dir "$(pwd)"
+          chmod +x gradlew
+          echo "==> Wrapper ready:"
+          ls -lh gradle/wrapper/
 
       - name: Download libv2ray.aar
         run: |
           mkdir -p app/libs
-          echo "Fetching V2RayNG latest release..."
           RELEASE_JSON=$(curl -fsSL \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/2dust/v2rayNG/releases/latest")
-
           DOWNLOAD_URL=$(echo "$RELEASE_JSON" | python3 -c "
 import sys, json
 data = json.loads(sys.stdin.read())
@@ -50,21 +54,29 @@ for a in data.get('assets', []):
     if 'libv2ray' in a['name'] and a['name'].endswith('.aar'):
         print(a['browser_download_url']); break
 ")
-
-          if [ -z "$DOWNLOAD_URL" ]; then
-            echo "Warning: libv2ray.aar not found in release assets"
-            echo "Available assets:"
+          if [ -n "$DOWNLOAD_URL" ]; then
+            echo "Downloading: $DOWNLOAD_URL"
+            curl -fsSL -L "$DOWNLOAD_URL" -o app/libs/libv2ray.aar
+            echo "Size: $(du -sh app/libs/libv2ray.aar)"
+          else
+            echo "WARNING: libv2ray.aar not found in latest V2RayNG release"
             echo "$RELEASE_JSON" | python3 -c "
 import sys, json
 data = json.loads(sys.stdin.read())
 for a in data.get('assets', []):
     print(' -', a['name'])
 "
-          else
-            echo "Downloading: $DOWNLOAD_URL"
-            curl -fsSL -L "$DOWNLOAD_URL" -o app/libs/libv2ray.aar
-            echo "Size: $(du -sh app/libs/libv2ray.aar)"
           fi
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle.kts') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
 
       - name: Build Debug APK
         run: ./gradlew assembleDebug --stacktrace
@@ -82,10 +94,9 @@ for a in data.get('assets', []):
         if: always()
         run: |
           echo "### Build Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
           if find app/build/outputs/apk -name "*.apk" 2>/dev/null | grep -q .; then
             find app/build/outputs/apk -name "*.apk" | while read f; do
-              echo "- **$(basename $f)** ($(du -sh "$f" | cut -f1))" >> $GITHUB_STEP_SUMMARY
+              echo "- **$(basename "$f")** ($(du -sh "$f" | cut -f1))" >> $GITHUB_STEP_SUMMARY
             done
           else
             echo "No APK produced" >> $GITHUB_STEP_SUMMARY
