@@ -76,16 +76,13 @@ jobs:
       - name: Build Debug APK
         run: |
           set +e
-          ./gradlew assembleDebug --stacktrace 2>&1 | tee /tmp/gradle.log
-          BUILD_RC=${PIPESTATUS[0]}
-          if [ "$BUILD_RC" -ne 0 ]; then
-            echo ""
-            echo "========== KEY ERRORS =========="
-            grep -n "^e:\|error:\|FAILED\|Unresolved\|Could not resolve\|Cannot resolve" /tmp/gradle.log | head -80 || true
-            echo ""
-            echo "========== FIRST 80 LINES =========="
-            head -80 /tmp/gradle.log
-          fi
+          ./gradlew assembleDebug --stacktrace > /tmp/gradle.log 2>&1
+          BUILD_RC=$?
+          echo "### Gradle exit code: $BUILD_RC"
+          echo "### KEY ERRORS:"
+          grep -n "^e:\|error:\| error \|FAILED\|Unresolved\|Could not\|Exception:" /tmp/gradle.log | head -80 || echo "(none found)"
+          echo "### FIRST 100 LINES:"
+          head -100 /tmp/gradle.log
           exit $BUILD_RC
         env:
           GRADLE_OPTS: "-Dorg.gradle.daemon=false"
