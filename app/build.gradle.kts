@@ -1,3 +1,5 @@
+import java.io.File
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -19,8 +21,8 @@ android {
     signingConfigs {
         create("release") {
             val keystoreFile = System.getenv("SIGNING_KEYSTORE_PATH")
-            if (keystoreFile != null && java.io.File(keystoreFile).exists()) {
-                storeFile = java.io.File(keystoreFile)
+            if (keystoreFile != null && File(keystoreFile).exists()) {
+                storeFile = File(keystoreFile)
                 storePassword = System.getenv("SIGNING_STORE_PASSWORD") ?: ""
                 keyAlias = System.getenv("SIGNING_KEY_ALIAS") ?: ""
                 keyPassword = System.getenv("SIGNING_KEY_PASSWORD") ?: ""
