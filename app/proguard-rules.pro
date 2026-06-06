@@ -1,0 +1,8 @@
+-keep class com.vpnapp.api.model.** { *; }
+-keep class libv2ray.** { *; }
+-keepattributes Signature
+-keepattributes *Annotation*
+-dontwarn okhttp3.**
+-dontwarn okio.**
+-dontwarn javax.annotation.**
+-dontwarn retrofit2.**

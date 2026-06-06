@@ -1,0 +1,27 @@
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# Generated APKs/AABs
+app/build/
+app/release/
+app/*.apk
+app/*.aab
+
+# Keystore files — NEVER commit to public repos
+*.jks
+*.keystore
+keystore.properties
+
+# libv2ray AAR (too large, downloaded at build time)
+app/libs/libv2ray.aar
+
+# Gradle wrapper jar (downloaded by Actions)
+# gradle/wrapper/gradle-wrapper.jar

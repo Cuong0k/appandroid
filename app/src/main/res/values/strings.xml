@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">VPN</string>
+    <string name="login">Đăng nhập</string>
+    <string name="register">Tạo tài khoản</string>
+    <string name="email">Email</string>
+    <string name="password">Mật khẩu</string>
+    <string name="connect">Kết nối</string>
+    <string name="disconnect">Ngắt kết nối</string>
+    <string name="select_node">Chọn máy chủ</string>
+    <string name="subscription">Đăng ký</string>
+    <string name="settings">Cài đặt</string>
+    <string name="logout">Đăng xuất</string>
+    <string name="no_subscription">Chưa có gói đăng ký</string>
+    <string name="buy_plan">Mua gói</string>
+</resources>
