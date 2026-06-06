@@ -74,9 +74,20 @@ jobs:
             ${{ runner.os }}-gradle-
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace
+        run: |
+          set -o pipefail
+          ./gradlew assembleDebug --stacktrace 2>&1 | tee /tmp/gradle.log
         env:
           GRADLE_OPTS: "-Dorg.gradle.daemon=false"
+
+      - name: Show build errors
+        if: failure()
+        run: |
+          echo "====== FIRST 150 LINES ======"
+          head -150 /tmp/gradle.log
+          echo ""
+          echo "====== ERROR LINES ======"
+          grep -n "error:\|FAILED\|Exception\|Could not\|Unresolved\|e:" /tmp/gradle.log | head -40 || true
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
